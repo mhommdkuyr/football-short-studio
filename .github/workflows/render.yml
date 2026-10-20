@@ -1,0 +1,70 @@
+name: Render Arabic Football Short
+
+on:
+  workflow_dispatch:
+    inputs:
+      audio_url:
+        description: Temporary URL for the Arabic narration MP3
+        required: true
+        type: string
+      release_tag:
+        description: Unique release tag for this Short
+        required: true
+        type: string
+      release_title:
+        description: Release title
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install fonts and FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-noto-core
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install renderer dependencies
+        run: python -m pip install --no-cache-dir Pillow arabic-reshaper python-bidi
+
+      - name: Download Arabic narration
+        env:
+          AUDIO_URL: ${{ github.event.inputs.audio_url }}
+        run: |
+          mkdir -p out
+          curl --fail --location --retry 2 --max-time 90 "$AUDIO_URL" --output out/narration.mp3
+          test -s out/narration.mp3
+          ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 out/narration.mp3
+
+      - name: Render vertical Short
+        run: python render_short.py --audio out/narration.mp3 --out out/football-short.mp4 --srt out/subtitles.srt
+
+      - name: Publish downloadable video asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag }}
+          name: ${{ github.event.inputs.release_title }}
+          body: |
+            Original Arabic football Short with custom animated score cards, Arabic narration, and burned-in captions.
+            Match facts checked against Liverpool FC and Sky Sports reports for 20 October 2026.
+            No broadcast footage or third-party match clips are included.
+          files: |
+            out/football-short.mp4
+            out/subtitles.srt
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
