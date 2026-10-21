@@ -1,0 +1,84 @@
+name: Render Como 4-1 Arabic Football Short
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/como-united-short.yml'
+      - 'render_como_short.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: como-united-short
+  cancel-in-progress: false
+
+jobs:
+  render-and-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install FFmpeg and Arabic fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-noto-core
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install renderer and narration dependencies
+        run: python -m pip install --no-cache-dir Pillow arabic-reshaper python-bidi gTTS
+
+      - name: Generate Arabic narration
+        run: |
+          mkdir -p out
+          python - <<'PY'
+          from gtts import gTTS
+          from render_como_short import NARRATION
+          gTTS(text=NARRATION, lang="ar", slow=False).save("out/narration.mp3")
+          PY
+          test -s out/narration.mp3
+          ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 out/narration.mp3
+
+      - name: Render original vertical Short and subtitles
+        run: |
+          python render_como_short.py --audio out/narration.mp3 --out out/como-united-4-1.mp4 --srt out/subtitles.srt
+          test -s out/como-united-4-1.mp4
+          test -s out/subtitles.srt
+          ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height -of json out/como-united-4-1.mp4
+          ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,sample_rate -of json out/como-united-4-1.mp4
+
+      - name: Publish MP4 and SRT as a public release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: como-man-utd-20261021-${{ github.run_id }}
+          name: "كومو 4-1 مانشستر يونايتد | Short عربي | 21 أكتوبر 2026"
+          body: |
+            Original 9:16 Arabic-language football Short.
+            Uses custom graphics, Arabic narration, and captions; contains no broadcast match footage.
+            Match facts checked against Reuters and The Guardian:
+            - https://www.reuters.com/sports/soccer/fernandes-questions-uniteds-tactics-after-como-hammering-2026-10-21/
+            - https://www.theguardian.com/football/live/2026/oct/21/como-v-manchester-united-champions-league-live
+          files: |
+            out/como-united-4-1.mp4
+            out/subtitles.srt
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Keep a downloadable workflow artifact as backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: como-united-arabic-short
+          path: |
+            out/como-united-4-1.mp4
+            out/subtitles.srt
+          retention-days: 14
